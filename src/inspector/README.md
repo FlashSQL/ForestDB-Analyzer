@@ -1,22 +1,22 @@
-## ForestDB Block Inspector
+# ForestDB Block Inspector
 Block inspector analyzes a type of a block. 
 Inputs are outputs of `blktrace`
 
 ## HOW TO BUILD
 
-Only works on Linux platforms. There is an dependency on forestdb source.
+Only works on Linux platforms. There is an dependency on forestdb source.  
 You may need to modify the codes of inspector related to your forestdb version.
 
 - Use preferable c++ compiler to compile sourcode. 
-- For standalone fdb-inspector, compile `standalone.cc` file
-with header file directory options. (e.g. g++ -I/home/me/forestdb/include)
+- For standalone fdb-inspector, compile `standalone.cc` file with header file directory options.  
+(e.g. g++ -I/home/me/forestdb/include)
     - Header file directories are /your/fdb/home/include, 
     /your/fdb/home/src, /your/fdb/home/utils
 
 ## HOW TO RUN
 Let's assume that binary file is `fdb-analyzer`
 
-Run the binary with blktrace before running your forestdb benchmark on background. 
+Run the binary with blktrace before running your forestdb benchmark on background.   
 `blktrace` and `fdb-analyzer` should be run as a root previlege. 
 ```
     $> sudo btrace /dev/sdc 2>&1 | 
