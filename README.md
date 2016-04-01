@@ -3,3 +3,6 @@
 
 # Requirments
 - Latest version of ForestDB @Couchbase/ForestDB
+
+# HOW TO USE
+Please refer to README.md files of each utilities inside src/util_name folder
