@@ -9,9 +9,12 @@
   * "src/common.h" header file of forestdb contains types of block marker
   * and docblk_meta structure.
   */
-#include "src/common.h" 
+
+#define __GNU_SOURCE
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <inttypes.h>
 #include <unistd.h>
 #include <errno.h>
@@ -108,20 +111,12 @@ int parse_opt(int argc, char* argv[]) {
 /**
   * Block marker of forestdb
   * (commit version is 671823e363615f37439f3ddaaeb730018a3db0a4) 
-  *
-  * #define BLK_MARKER_BNODE (0xff)
-  * #define BLK_MARKER_DBHEADER (0xee)
-  * #define BLK_MARKER_DOC (0xdd)
-  * #define BLK_MARKER_SB (0xcc) // superblock
-  * #define BLK_MARKER_SIZE (1)
-  * #define DOCBLK_META_SIZE (16)
-  * struct docblk_meta {
-  *     bid_t next_bid;
-  *     uint16_t sb_bmp_revnum_hash;
-  *     uint8_t reserved[5];
-  *     uint8_t marker;
-  * };
   */
+#define BLK_MARKER_BNODE (0xff)
+#define BLK_MARKER_DBHEADER (0xee)
+#define BLK_MARKER_DOC (0xdd)
+#define BLK_MARKER_SB (0xcc) // superblock
+#define BLK_MARKER_SIZE (1)
 
 enum fdb_blk_types {
     DOC = 0,    /* document */
@@ -163,12 +158,11 @@ int do_inspect(void) {
     int blocksize = global_config.blocksize;
     int metasize = 
         (global_config.marker == 0?
-         BLK_MARKER_SIZE: sizeof(struct docblk_meta));
+         BLK_MARKER_SIZE: 1);
     int idx = 0;
     uint64_t offset, bytes;
     char *block; 
     char tline[128];
-    struct docblk_meta *blk_meta;
     unsigned char blk_type;
     string line, output;
     string *lists;
@@ -204,8 +198,6 @@ int do_inspect(void) {
                 pread(dev, block, blocksize, offset);
 
                 if (global_config.marker) {
-                    blk_meta = (struct docblk_meta*)(block + blocksize - metasize);
-                    blk_type = blk_meta->marker;
                 } else {
                     blk_type = *(block + blocksize - metasize);
                 } // if marker 
