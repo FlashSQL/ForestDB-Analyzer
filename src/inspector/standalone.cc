@@ -153,7 +153,7 @@ void print_count(void) {
     printf("=============================\n");
 }
 
-int do_inspect(void) {
+int do_inspect(char* appname) {
     int dev;
     int blocksize = global_config.blocksize;
     int metasize = 
@@ -166,6 +166,7 @@ int do_inspect(void) {
     unsigned char blk_type;
     string line, output;
     string *lists;
+    char scanbuf[1024];
 
 
     if ( 0 >= (dev = open(global_config.devname, O_RDONLY | O_LARGEFILE))) {
@@ -174,25 +175,30 @@ int do_inspect(void) {
     } // open device 
 
     memset(type_cnt, 0, sizeof(type_cnt));
-    lists = new string[12];
+    lists = new string[16];
     block = (char*)malloc(sizeof(char) * blocksize);
 
     while ( fgets(tline, sizeof(tline)-1, stdin) ) {
         line = string(tline);
-        cout << line;
 
         istringstream is(line); /* prepare tokenizing */
         idx = 0;
 
         /* get tokens */
-        while ( idx < 12 && is >> lists[idx++] );
+        while ( idx < 16 && is >> lists[idx++] );
 
-        if ( idx > 10 && lists[5][0] == 'D' && lists[6][0] == 'W' ) {
-            output = "";
+        if ( idx > 10 && lists[10] == string(appname) ) {
+            /* Skip for the I/O issued by this inspector */
+            continue;
+        }
+        if ( idx > 10 && 
+                (lists[5][0] == 'D' && (lists[6][0] == 'W' || lists[6][0] == 'R')) ||
+                (lists[5][0] == 'I' && lists[6][0] == 'F') {
             /* get offset and num sectors */
             offset = atoll(lists[7].c_str()) * 512;
             bytes = atoll(lists[9].c_str()) * 512;
 
+            lists[9] = string("8");
             /* inspect a block */
             while ( blocksize <= bytes && 0 < bytes ) {
                 pread(dev, block, blocksize, offset);
@@ -204,32 +210,47 @@ int do_inspect(void) {
 
                 switch (blk_type) {
                     case BLK_MARKER_BNODE:
-                        output += string("BNODE ");
+                        output = string("BNODE ");
                         type_cnt[BNODE]++;
                         break;
                     case BLK_MARKER_DBHEADER:
-                        output += string("DBHEADER ");
+                        output = string("DBHEADER ");
                         type_cnt[DBHEADER]++;
                         break;
                     case BLK_MARKER_DOC:
-                        output += string("DOC ");
+                        output = string("DOC ");
                         type_cnt[DOC]++;
                         break;
                     case BLK_MARKER_SB:
-                        output += string("SB ");
+                        output = string("SB ");
                         type_cnt[SB]++;
                         break;
                     default:
-                        output += string("NOT_FDB ");
+                        output = string("NOT_FDB ");
                         type_cnt[BLK_TYPE_END]++;
                         break;
                 }; //switch blk_type
                 type_cnt[BLK_TYPE_END+1]++;
 
+                //new offset for separation 
+                sprintf(scanbuf, "%"PRIu64, offset);
+                lists[7] = string(scanbuf);
+
+                // Next offset
                 offset += blocksize;
                 bytes -= blocksize;
+                for (int k = 0 ;k < idx;k++) {
+                    cout << lists[k] << " ";
+                } // print 
+                cout << output << endl; ;
+
+                /* print only once for FWFS */
+                if (lists[6][0] == 'F') {
+                    break;
+                } // FWFS
             } // while (blocksize <= bytes && 0 < bytes)
-            cout << output << endl;
+        } else { 
+            cout << line;
         } // if D W 
     } //while ( fgets() )
 
@@ -250,6 +271,7 @@ void set_signal(void) {
 
 int main(int argc, char *argv[]) {
     int rv;
+    char *appname;
 
     init_config();
 
@@ -264,7 +286,15 @@ int main(int argc, char *argv[]) {
     } // verify configs
 
     set_signal();
-    rv = do_inspect();
+
+    appname = (char*)malloc(sizeof(char) * strlen(argv[0]));
+    appname[0] = '[';
+    strncpy(appname+1, argv[0]+2, strlen(argv[0])-2);
+    appname[strlen(argv[0])-1] = ']';
+
+    printf("Inspector name is %s\n", appname);
+
+    rv = do_inspect(appname);
 
 exit:
     destroy_config();
