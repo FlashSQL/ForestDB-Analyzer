@@ -193,7 +193,7 @@ int do_inspect(char* appname) {
         }
         if ( idx > 10 && 
                 (lists[5][0] == 'D' && (lists[6][0] == 'W' || lists[6][0] == 'R')) ||
-                (lists[5][0] == 'I' && lists[6][0] == 'F') {
+                (lists[5][0] == 'I' && lists[6][0] == 'F')) {
             /* get offset and num sectors */
             offset = atoll(lists[7].c_str()) * 512;
             bytes = atoll(lists[9].c_str()) * 512;
