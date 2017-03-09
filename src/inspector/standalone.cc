@@ -30,12 +30,12 @@ using namespace std;
 #define DEV_NOT_FOUND   0x04
 
 void print_usage(char* name) {
-    printf("Usage: %s options\n", name);
-    printf("-b blocksize: block size of target forestdb (default: 4096)\n");
-    printf("-m meta: 0 - use BLK_MARKER, 1 - use DOCBLK_META\n");
-    printf("                (default: 0)\n");
-    printf("-d devname: Device name which contains target forestdb\n");
-    printf("            (/dev/sdxx must be used)\n");
+    fprintf(stderr, "Usage: %s options\n", name);
+    fprintf(stderr, "-b blocksize: block size of target forestdb (default: 4096)\n");
+    fprintf(stderr, "-m meta: 0 - use BLK_MARKER, 1 - use DOCBLK_META\n");
+    fprintf(stderr, "                (default: 0)\n");
+    fprintf(stderr, "-d devname: Device name which contains target forestdb\n");
+    fprintf(stderr, "            (/dev/sdxx must be used)\n");
 }
 
 /**
@@ -73,11 +73,11 @@ int verify_config(void) {
     }
 
     /* print options */
-    printf("====== Configurations ======\n");
-    printf("Blocksize: %" PRIu64 " bytes\n", global_config.blocksize);
-    printf("Device name: %s\n", global_config.devname);
-    printf("Marker: %d\n", global_config.marker);
-    printf("============================\n");
+    fprintf(stderr, "====== Configurations ======\n");
+    fprintf(stderr, "Blocksize: %" PRIu64 " bytes\n", global_config.blocksize);
+    fprintf(stderr, "Device name: %s\n", global_config.devname);
+    fprintf(stderr, "Marker: %d\n", global_config.marker);
+    fprintf(stderr, "============================\n");
     return SUCCESS;
 }
 
@@ -126,15 +126,16 @@ enum fdb_blk_types {
     BLK_TYPE_END
 };
 
-char fdb_blk_names[BLK_TYPE_END +1][16] = {
+char fdb_blk_names[BLK_TYPE_END + 2][16] = {
     "Document",
     "Index",
     "Header",
     "Superblock",
-    "Not FDB"
+    "Not FDB",
+    "Total Writes"
 };
 
-uint64_t type_cnt[BLK_TYPE_END+2]; //this includes total count 
+uint64_t type_cnt[BLK_TYPE_END + 2]; //this includes total count 
 
 
 void print_count(void) {
@@ -142,18 +143,18 @@ void print_count(void) {
     uint64_t fdb_total = 
         total - type_cnt[BLK_TYPE_END];
     
-    printf("\n======== Statistics =========\n");
-    for (int i = 0 ;i < BLK_TYPE_END + 1;i++) {
-        printf("TYPE %s: %" PRIu64 
+    fprintf(stderr, "\n======== Statistics =========\n");
+    for (int i = 0 ;i < BLK_TYPE_END + 2;i++) {
+        fprintf(stderr, "TYPE %s: %" PRIu64 
                 " pages, %.4Lf%% of FDB, %.4Lf%% of Total\n", 
                 fdb_blk_names[i], type_cnt[i], 
                 (long double)type_cnt[i] / fdb_total * 100,
                 (long double)type_cnt[i] / total * 100);
     }
-    printf("=============================\n");
+    fprintf(stderr, "=============================\n");
 }
 
-int do_inspect(void) {
+int do_inspect(string& appname) {
     int dev;
     int blocksize = global_config.blocksize;
     int metasize = 
@@ -166,6 +167,7 @@ int do_inspect(void) {
     unsigned char blk_type;
     string line, output;
     string *lists;
+    char scanbuf[1024];
 
 
     if ( 0 >= (dev = open(global_config.devname, O_RDONLY | O_LARGEFILE))) {
@@ -174,25 +176,30 @@ int do_inspect(void) {
     } // open device 
 
     memset(type_cnt, 0, sizeof(type_cnt));
-    lists = new string[12];
+    lists = new string[16];
     block = (char*)malloc(sizeof(char) * blocksize);
 
     while ( fgets(tline, sizeof(tline)-1, stdin) ) {
         line = string(tline);
-        cout << line;
 
         istringstream is(line); /* prepare tokenizing */
         idx = 0;
 
         /* get tokens */
-        while ( idx < 12 && is >> lists[idx++] );
+        while ( idx < 16 && is >> lists[idx++] );
 
-        if ( idx > 10 && lists[5][0] == 'D' && lists[6][0] == 'W' ) {
-            output = "";
+        if ( idx < 14 && idx > 10 && lists[10].substr(1, appname.size()) == appname ) {
+            /* Skip for the I/O issued by this inspector */
+            continue;
+        }
+        if ( idx > 10 && 
+                (lists[5][0] == 'D' && (lists[6][0] == 'W' || lists[6][0] == 'R')) ||
+                (lists[5][0] == 'I' && lists[6][0] == 'F')) {
             /* get offset and num sectors */
             offset = atoll(lists[7].c_str()) * 512;
             bytes = atoll(lists[9].c_str()) * 512;
 
+            lists[9] = string("8");
             /* inspect a block */
             while ( blocksize <= bytes && 0 < bytes ) {
                 pread(dev, block, blocksize, offset);
@@ -204,32 +211,50 @@ int do_inspect(void) {
 
                 switch (blk_type) {
                     case BLK_MARKER_BNODE:
-                        output += string("BNODE ");
+                        output = string("BNODE");
                         type_cnt[BNODE]++;
                         break;
                     case BLK_MARKER_DBHEADER:
-                        output += string("DBHEADER ");
+                        output = string("DBHEADER");
                         type_cnt[DBHEADER]++;
                         break;
                     case BLK_MARKER_DOC:
-                        output += string("DOC ");
+                        output = string("DOC");
                         type_cnt[DOC]++;
                         break;
                     case BLK_MARKER_SB:
-                        output += string("SB ");
+                        output = string("SB");
                         type_cnt[SB]++;
                         break;
                     default:
-                        output += string("NOT_FDB ");
+                        output = string("NOT_FDB");
                         type_cnt[BLK_TYPE_END]++;
                         break;
                 }; //switch blk_type
                 type_cnt[BLK_TYPE_END+1]++;
 
+                //new offset for separation 
+                sprintf(scanbuf, "%"PRIu64, offset);
+                lists[7] = string(scanbuf);
+
+                // Next offset
                 offset += blocksize;
                 bytes -= blocksize;
+                for (int k = 0 ;k < idx;k++) {
+                    if (lists[k] == string("00") ) {
+                        continue;
+                    }
+                    cout << lists[k] << " ";
+                } // print 
+                cout << output << endl; ;
+
+                /* print only once for FWFS */
+                if (lists[6][0] == 'F') {
+                    break;
+                } // FWFS
             } // while (blocksize <= bytes && 0 < bytes)
-            cout << output << endl;
+        } else { 
+            cout << line;
         } // if D W 
     } //while ( fgets() )
 
@@ -250,6 +275,7 @@ void set_signal(void) {
 
 int main(int argc, char *argv[]) {
     int rv;
+    string appname; 
 
     init_config();
 
@@ -264,7 +290,10 @@ int main(int argc, char *argv[]) {
     } // verify configs
 
     set_signal();
-    rv = do_inspect();
+
+    appname = string(basename(argv[0])); 
+
+    rv = do_inspect(appname);
 
 exit:
     destroy_config();
