@@ -30,12 +30,12 @@ using namespace std;
 #define DEV_NOT_FOUND   0x04
 
 void print_usage(char* name) {
-    printf("Usage: %s options\n", name);
-    printf("-b blocksize: block size of target forestdb (default: 4096)\n");
-    printf("-m meta: 0 - use BLK_MARKER, 1 - use DOCBLK_META\n");
-    printf("                (default: 0)\n");
-    printf("-d devname: Device name which contains target forestdb\n");
-    printf("            (/dev/sdxx must be used)\n");
+    fprintf(stderr, "Usage: %s options\n", name);
+    fprintf(stderr, "-b blocksize: block size of target forestdb (default: 4096)\n");
+    fprintf(stderr, "-m meta: 0 - use BLK_MARKER, 1 - use DOCBLK_META\n");
+    fprintf(stderr, "                (default: 0)\n");
+    fprintf(stderr, "-d devname: Device name which contains target forestdb\n");
+    fprintf(stderr, "            (/dev/sdxx must be used)\n");
 }
 
 /**
@@ -73,11 +73,11 @@ int verify_config(void) {
     }
 
     /* print options */
-    printf("====== Configurations ======\n");
-    printf("Blocksize: %" PRIu64 " bytes\n", global_config.blocksize);
-    printf("Device name: %s\n", global_config.devname);
-    printf("Marker: %d\n", global_config.marker);
-    printf("============================\n");
+    fprintf(stderr, "====== Configurations ======\n");
+    fprintf(stderr, "Blocksize: %" PRIu64 " bytes\n", global_config.blocksize);
+    fprintf(stderr, "Device name: %s\n", global_config.devname);
+    fprintf(stderr, "Marker: %d\n", global_config.marker);
+    fprintf(stderr, "============================\n");
     return SUCCESS;
 }
 
@@ -126,15 +126,16 @@ enum fdb_blk_types {
     BLK_TYPE_END
 };
 
-char fdb_blk_names[BLK_TYPE_END +1][16] = {
+char fdb_blk_names[BLK_TYPE_END + 2][16] = {
     "Document",
     "Index",
     "Header",
     "Superblock",
-    "Not FDB"
+    "Not FDB",
+    "Total Writes"
 };
 
-uint64_t type_cnt[BLK_TYPE_END+2]; //this includes total count 
+uint64_t type_cnt[BLK_TYPE_END + 2]; //this includes total count 
 
 
 void print_count(void) {
@@ -142,18 +143,18 @@ void print_count(void) {
     uint64_t fdb_total = 
         total - type_cnt[BLK_TYPE_END];
     
-    printf("\n======== Statistics =========\n");
-    for (int i = 0 ;i < BLK_TYPE_END + 1;i++) {
-        printf("TYPE %s: %" PRIu64 
+    fprintf(stderr, "\n======== Statistics =========\n");
+    for (int i = 0 ;i < BLK_TYPE_END + 2;i++) {
+        fprintf(stderr, "TYPE %s: %" PRIu64 
                 " pages, %.4Lf%% of FDB, %.4Lf%% of Total\n", 
                 fdb_blk_names[i], type_cnt[i], 
                 (long double)type_cnt[i] / fdb_total * 100,
                 (long double)type_cnt[i] / total * 100);
     }
-    printf("=============================\n");
+    fprintf(stderr, "=============================\n");
 }
 
-int do_inspect(char* appname) {
+int do_inspect(string& appname) {
     int dev;
     int blocksize = global_config.blocksize;
     int metasize = 
@@ -187,7 +188,7 @@ int do_inspect(char* appname) {
         /* get tokens */
         while ( idx < 16 && is >> lists[idx++] );
 
-        if ( idx > 10 && lists[10] == string(appname) ) {
+        if ( idx < 14 && idx > 10 && lists[10].substr(1, appname.size()) == appname ) {
             /* Skip for the I/O issued by this inspector */
             continue;
         }
@@ -210,23 +211,23 @@ int do_inspect(char* appname) {
 
                 switch (blk_type) {
                     case BLK_MARKER_BNODE:
-                        output = string("BNODE ");
+                        output = string("BNODE");
                         type_cnt[BNODE]++;
                         break;
                     case BLK_MARKER_DBHEADER:
-                        output = string("DBHEADER ");
+                        output = string("DBHEADER");
                         type_cnt[DBHEADER]++;
                         break;
                     case BLK_MARKER_DOC:
-                        output = string("DOC ");
+                        output = string("DOC");
                         type_cnt[DOC]++;
                         break;
                     case BLK_MARKER_SB:
-                        output = string("SB ");
+                        output = string("SB");
                         type_cnt[SB]++;
                         break;
                     default:
-                        output = string("NOT_FDB ");
+                        output = string("NOT_FDB");
                         type_cnt[BLK_TYPE_END]++;
                         break;
                 }; //switch blk_type
@@ -240,6 +241,9 @@ int do_inspect(char* appname) {
                 offset += blocksize;
                 bytes -= blocksize;
                 for (int k = 0 ;k < idx;k++) {
+                    if (lists[k] == string("00") ) {
+                        continue;
+                    }
                     cout << lists[k] << " ";
                 } // print 
                 cout << output << endl; ;
@@ -271,7 +275,7 @@ void set_signal(void) {
 
 int main(int argc, char *argv[]) {
     int rv;
-    char *appname;
+    string appname; 
 
     init_config();
 
@@ -287,12 +291,7 @@ int main(int argc, char *argv[]) {
 
     set_signal();
 
-    appname = (char*)malloc(sizeof(char) * strlen(argv[0]));
-    appname[0] = '[';
-    strncpy(appname+1, argv[0]+2, strlen(argv[0])-2);
-    appname[strlen(argv[0])-1] = ']';
-
-    printf("Inspector name is %s\n", appname);
+    appname = string(basename(argv[0])); 
 
     rv = do_inspect(appname);
 
